@@ -1,45 +1,64 @@
 import pandas as pd
 
 def profit_exit(cum_rets, limit):
-    exit_idx = cum_rets.index[(cum_rets >= limit).argmax()]
-    return exit_idx
+    exit_dates = cum_rets[(cum_rets >= limit)]
+    
+    if exit_dates.empty: return None
+    
+    return exit_dates.idxmin()
 
 def stop_loss_exit(cum_rets, limit):
-    exit_idx = cum_rets.index[(cum_rets <= limit).argmax()]
-    return exit_idx
+    exit_dates = cum_rets[(cum_rets <= limit)]
+    
+    if exit_dates.empty: return None
+    
+    return exit_dates.idxmin()
 
-def calculate_trade(entry_date, returns, pt, sl, tl):
+def calculate_trade(entry_date, is_long, returns, pt, sl, tl):
     entry_idx = returns.index.get_loc(entry_date)
     exit_idx = min(entry_idx + tl, len(returns) - 1)
-    
+    max_date = returns.index[exit_idx]
     cum_rets = returns.iloc[entry_idx + 1:exit_idx + 1].cumsum()
     
-    pt_exit_idx = profit_exit(cum_rets, pt)
-    sl_exit_idx = stop_loss_exit(cum_rets, sl)
+    if not is_long:
+        # flip the sign for short position
+        cum_rets *= -1
     
-    if not pt_exit_idx or not sl_exit_idx:
-        exit_idx = exit_idx
+    pt_exit_date = profit_exit(cum_rets, pt)
+    sl_exit_date = stop_loss_exit(cum_rets, sl)
+    
+    if not pt_exit_date and not sl_exit_date:
+        exit_date = max_date
+    elif pt_exit_date is None:
+        exit_date = sl_exit_date
+    elif sl_exit_date is None:
+        exit_date = pt_exit_date
     else:
-        exit_idx = min(pt_exit_idx, sl_exit_idx)
+        exit_date = min(pt_exit_date, sl_exit_date)
     
     return {
-        'entry': returns.index[entry_idx],
-        'exit': returns.index[entry_idx + exit_idx],
-        'ret': cum_rets.iloc[exit_idx - 1],
-        'time': exit_idx - 1,
-        'maxret': cum_rets.max() - cum_rets.iloc[0]
+        'entry': entry_date,
+        'exit': exit_date,
+        'ret': cum_rets.loc[exit_date],        
+        'posday': exit_date - entry_date,
+        'maxdate': max_date,
+        'maxret': cum_rets.max(),
+        'holdret': cum_rets.iloc[-1]
+        
+        
     }
-def calculate_trades(returns, event_dates, pt, sl, tl):
-    trades = map(lambda date: calculate_trade(date, returns, pt, sl, tl), event_dates)
-    return pd.DataFrame(trades, index=event_dates, columns=['entry', 'exit', 'ret', 'time', 'maxret'])
+def calculate_trades(returns, events, pt, sl, tl):
+    trades = map(lambda e: calculate_trade(e[0], e[1], returns, pt, sl, tl), events)
+    colnames = ['entry', 'exit', 'ret', 'posday', 'maxdate', 'maxret', 'holdret']
+    return pd.DataFrame(trades, index=event_dates, columns=colnames)
 
-def triple_barrier_method(returns, event_dates, pt, sl, tl):
+def triple_barrier_method(returns, events, pt, sl, tl):
     returns = returns.copy()
-    trades = calculate_trades(returns, event_dates, pt, sl, tl)
+    trades = calculate_trades(returns, events, pt, sl, tl)
     return trades
 
 
-import pandas as pd
+
 
 # Prepare input data
 returns = pd.DataFrame({
@@ -47,13 +66,22 @@ returns = pd.DataFrame({
     'Return': [0.01, -0.02, 0.03, -0.01, 0.02] * 20  # Example daily returns
 })
 
-event_dates = pd.to_datetime(['2022-01-05', '2022-01-15', '2022-01-25'])
-profit_taking = 0.02
-stop_loss = -0.01
-time_limit = 5
+returns["Date"] = returns["Date"].dt.date
+returns = returns.set_index('Date')  # Set 'Date' column as the index
+
+event_dates = pd.to_datetime(['2022-01-01', '2022-01-15', '2022-01-25']).date
+positions = [True, False, True] 
+
+events = list(zip(event_dates, positions))
+
+
+
+profit_taking = 0.01
+stop_loss = -0.04
+time_limit = 6
 
 # Call triple_barrier_method function
-trades = triple_barrier_method(returns, event_dates, profit_taking, stop_loss, time_limit)
+trades = triple_barrier_method(returns["Return"], events, profit_taking, stop_loss, time_limit)
 
 # Inspect the trades DataFrame
 print(trades)
