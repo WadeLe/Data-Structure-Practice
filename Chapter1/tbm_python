@@ -1,0 +1,39 @@
+import pandas as pd
+
+def profit_exit(cum_rets, limit):
+    exit_idx = cum_rets.index[(cum_rets >= limit).argmax()]
+    return exit_idx
+
+def stop_loss_exit(cum_rets, limit):
+    exit_idx = cum_rets.index[(cum_rets <= limit).argmax()]
+    return exit_idx
+
+def calculate_trade(entry_date, returns, pt, sl, tl):
+    entry_idx = returns.index.get_loc(entry_date)
+    exit_idx = min(entry_idx + tl, len(returns) - 1)
+    
+    cum_rets = returns.iloc[entry_idx + 1:exit_idx + 1].cumsum()
+    
+    pt_exit_idx = profit_exit(cum_rets, pt)
+    sl_exit_idx = stop_loss_exit(cum_rets, sl)
+    
+    if not pt_exit_idx or not sl_exit_idx:
+        exit_idx = exit_idx
+    else:
+        exit_idx = min(pt_exit_idx, sl_exit_idx)
+    
+    return {
+        'entry': returns.index[entry_idx],
+        'exit': returns.index[entry_idx + exit_idx],
+        'ret': cum_rets.iloc[exit_idx - 1],
+        'time': exit_idx - 1,
+        'maxret': cum_rets.max() - cum_rets.iloc[0]
+    }
+def calculate_trades(returns, event_dates, pt, sl, tl):
+    trades = map(lambda date: calculate_trade(date, returns, pt, sl, tl), event_dates)
+    return pd.DataFrame(trades, index=event_dates, columns=['entry', 'exit', 'ret', 'time', 'maxret'])
+
+def triple_barrier_method(returns, event_dates, pt, sl, tl):
+    returns = returns.copy()
+    trades = calculate_trades(returns, event_dates, pt, sl, tl)
+    return trades
