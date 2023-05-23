@@ -50,7 +50,7 @@ def calculate_trade(entry_date, is_long, returns, pt, sl, tl):
 def calculate_trades(returns, events, pt, sl, tl):
     trades = map(lambda e: calculate_trade(e[0], e[1], returns, pt, sl, tl), events)
     colnames = ['entry', 'exit', 'ret', 'posday', 'maxdate', 'maxret', 'holdret']
-    return pd.DataFrame(trades, index=event_dates, columns=colnames)
+    return pd.DataFrame(trades, index=events, columns=colnames)
 
 def triple_barrier_method(returns, events, pt, sl, tl):
     returns = returns.copy()
@@ -85,3 +85,29 @@ trades = triple_barrier_method(returns["Return"], events, profit_taking, stop_lo
 
 # Inspect the trades DataFrame
 print(trades)
+
+
+
+
+import pandas as pd
+from collections import defaultdict
+
+# Example dataframe
+df = pd.DataFrame({
+    'symbol': ['AAPL', 'AAPL', 'GOOGL', 'GOOGL', 'MSFT'],
+    'date': ['2023-01-05', '2023-01-10', '2023-01-15', '2023-01-20', '2023-01-25'],
+    'islong': [True, False, True, False, True]
+})
+
+df["date"] = pd.to_datetime(df['date'])
+
+events_dict = defaultdict(list)
+
+events = df.apply(lambda row: (row['symbol'], row['date'], row['islong']), axis=1)
+_ = events.apply(lambda event: events_dict[event[0]].append((event[1], event[2])))
+
+events_dict = dict(events_dict)
+
+print(events_dict)
+
+
