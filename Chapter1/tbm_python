@@ -5,14 +5,14 @@ def profit_exit(cum_rets, limit):
     
     if exit_dates.empty: return None
     
-    return exit_dates.idxmin()
+    return exit_dates.index[0]
 
 def stop_loss_exit(cum_rets, limit):
     exit_dates = cum_rets[(cum_rets <= limit)]
     
     if exit_dates.empty: return None
     
-    return exit_dates.idxmin()
+    return exit_dates.index[0]
 
 def calculate_trade(entry_date, is_long, returns, pt, sl, tl):
     entry_idx = returns.index.get_loc(entry_date)
