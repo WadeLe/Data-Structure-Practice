@@ -1,0 +1,106 @@
+library(data.table)
+library(ggplot2)
+
+hitratemean = function(winobs, totalobs){
+    hr = (winobs+1)/(totalobs+2)
+    return(hr)
+}
+
+hitratevar = function(winobs, totalobs){
+    a = (winobs+1)*(winobs+2) / ((totalobs+2)*(totalobs+3))
+    b = hitratemean(winobs, totalobs)**2
+    varhr = a-b
+    return(varhr)
+}
+
+findminwinrate <- function(benchmark, totalobs, pvaluethres = 0.05) {
+  
+  winobs <- benchmark * totalobs
+  pvalue <- 1
+  
+  while (pvalue >= pvaluethres) {
+    winobs <- winobs + 1
+    if (winobs > totalobs){
+        return(1)
+    }
+    hitrate_mean <- hitratemean(winobs, totalobs)
+    hitrate_var <- hitratevar(winobs, totalobs)
+    
+    z <- (hitrate_mean - benchmark) / sqrt(hitrate_var / totalobs)
+    pvalue <- 1 - pnorm(z)
+  }
+  min_winrate = winobs/totalobs
+    
+  return(min_winrate)
+}
+
+
+## this version may have some numerical issues
+# findminwinrate <- function(benchmark, totalobs, p_value_threshold = 0.05) {
+#   winrate <- benchmark
+#   p_value <- 1
+  
+#   while (p_value >= p_value_threshold) {
+#     winrate <- winrate + 0.0001
+#     if (winrate > 1){
+#         return(1)
+#     }
+#     winobs <- round(winrate * totalobs)  # Round to the nearest whole number of wins
+#     hitrate_mean <- hitratemean(winobs, totalobs)
+#     hitrate_var <- hitratevar(winobs, totalobs)    
+#     z <- (hitrate_mean - benchmark) / sqrt(hitrate_var / totalobs)    
+#     p_value <- 1 - pnorm(z)
+#   }
+  
+#   return(winrate)
+# }
+
+
+
+genminwinrates = function(benchmark, totalobsrange, pvaluethres = 0.05){
+    wrs <- c()
+    for (totalobs in totalobsrange) {
+     
+        wr <- findminwinrate(benchmark, totalobs, pvaluethres)
+        wrs <- c(wrs, wr)
+    }
+    return(wrs)
+}
+
+
+
+
+totalobsrange = 5:100
+
+
+wr60 = genminwinrates(0.6, totalobsrange, pvaluethres = 0.05)
+wr70 = genminwinrates(0.7, totalobsrange, pvaluethres = 0.05)
+wr80 = genminwinrates(0.8, totalobsrange, pvaluethres = 0.05)
+
+data = data.table(cbind(totalobsrange, wr60, wr70, wr80))
+df = as.data.frame(data)
+df_melted = melt(df, id.vars="totalobsrange", variable.name="benchmark", value.name = "winrate")
+
+
+# Plot win rates against observations
+ggplot(df_melted, aes(x = totalobsrange, y = winrate, color = benchmark)) +
+  geom_line() +
+  labs(x = "Number of Observations", y = "Win rate", color = "Benchmark", title="Required Win Rate vs. Number of Observations") +
+  scale_color_manual(values = c("wr60" = "blue", "wr70" = "red", "wr80" = "green")) +
+  theme_minimal()
+
+
+wr70_5 = genminwinrates(0.7, totalobsrange, pvaluethres = 0.05)
+wr70_10 = genminwinrates(0.7, totalobsrange, pvaluethres = 0.10)
+
+data = data.table(cbind(totalobsrange, wr70_5, wr70_10))
+df = as.data.frame(data)
+df_melted = melt(df, id.vars="totalobsrange", variable.name="pvalue", value.name = "winrate")
+
+
+# Plot win rates against observations
+ggplot(df_melted, aes(x = totalobsrange, y = winrate, color = pvalue)) +
+  geom_line() +
+  labs(x = "Number of Observations", y = "Win rate", color = "pvalue", title="Required Win Rate vs. Number of Observations by p-value") +
+  scale_color_manual(values = c("wr70_1" = "blue", "wr70_5" = "red", "wr70_10" = "green")) +
+  theme_minimal()
