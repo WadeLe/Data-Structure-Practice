@@ -1,0 +1,44 @@
+library(data.table)
+
+# Assuming you have two data.tables called 'viyy' and 'svxy' with columns 'date' and 'adj_price'
+# 'signal' is a separate data.table with columns 'date' and 'signal'
+
+# Merge the viyy and svxy data.tables on 'date' column
+merged_data <- merge(viyy, svxy, by = "date", all = TRUE)
+
+# Merge the signal data.table with merged_data on 'date' column
+merged_data <- merge(merged_data, signal, by = "date", all = TRUE)
+
+# Calculate the 1-year moving average for the signal
+merged_data[, signal_ma := frollmean(signal, n = 252, align = "right", fill = NA)]
+
+# Extract the last trading day of each week
+weekly_data <- merged_data[, .SD[.N], by = .(yearweek(date))]
+
+# Create a function to determine the position
+get_position <- function(signal, signal_ma) {
+  position <- ifelse(!is.na(signal) & signal < signal_ma, 1,
+                     ifelse(!is.na(signal) & signal > signal_ma, -1, 0))
+  return(position)
+}
+
+# Apply the function to calculate positions for each row in weekly_data
+weekly_data[, position := get_position(signal, signal_ma)]
+
+# Create a function to calculate the portfolio value
+calculate_portfolio <- function(position, adj_price_x, adj_price_y) {
+  value <- position * ifelse(!is.na(adj_price_x) & !is.na(adj_price_y), adj_price_x + adj_price_y,
+                             ifelse(!is.na(adj_price_x), adj_price_x,
+                                    ifelse(!is.na(adj_price_y), adj_price_y, 0)))
+  return(value)
+}
+
+# Apply the function to calculate portfolio values for each row in weekly_data
+weekly_data[, value := calculate_portfolio(position, adj_price.x, adj_price.y)]
+
+# Calculate the cumulative returns of the portfolio
+weekly_data[, returns := cumsum(value) / sum(abs(value))]
+
+# Print the positions and portfolio data.tables
+print(weekly_data[, .(date, position)])
+print(weekly_data[, .(date, value, returns)])
