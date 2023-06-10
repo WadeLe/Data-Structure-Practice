@@ -42,3 +42,53 @@ weekly_data[, returns := cumsum(value) / sum(abs(value))]
 # Print the positions and portfolio data.tables
 print(weekly_data[, .(date, position)])
 print(weekly_data[, .(date, value, returns)])
+
+
+
+We express the value of a leveraged ETF $L$ at time $t$ as a function of the returns of the index, and its leverage ratio $\lambda$"
+​
+$$
+L_t = L_0 \Pi \left(1 + \lambda r_i\right)
+$$
+​
+or 
+​
+$$
+\log \left(\frac{L_t}{L_0}\right) \approx \sum \left(\lambda r_i - \frac{\lambda^2}{2} r^2_i\right)
+$$
+​
+​
+Note that $\ln(1+x) \approx x - \frac{1}{2}x^2$. 
+​
+​
+We can do the analogous decompostion of the underlying asset $S$ at time $t$:
+​
+$$
+S_t = S_0 \Pi \left(1 +  r_i\right)
+$$
+​
+$$
+\log \left(\frac{S_t}{S_0}\right) \approx \sum \left(r_i - \frac{1}{2} r^2_i\right)
+$$
+​
+We can multiple it by the leverage ratio $\lambda$
+​
+$$
+\lambda \log \left(\frac{S_t}{S_0}\right) \approx \lambda \sum \left(r_i - \frac{1}{2} r^2_i\right)
+$$
+​
+Consider 
+​
+$$
+\ln \left(\frac{L_t}{L_0}\right) - \lambda \ln \left(\frac{S_t}{S_0}\right) \approx -\frac{\lambda^2- \lambda}{2} \sum r^2_i
+$$
+​
+​
+Therefore, solving for $L_t$ the value of the leveraged ETF at time $t$, we get
+​
+$$
+L_t \approx L_0 \left(\frac{S_t}{S_0)}\right)^\lambda \exp\left(-\frac{\lambda^2-\lambda}{2}V_t\right)
+$$
+​
+where $V_t =\sum r^2_i$, which is the realised variance of the underlying asset $S$ from time 0 to time $t$.
+​
