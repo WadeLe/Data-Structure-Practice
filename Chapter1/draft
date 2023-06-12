@@ -113,14 +113,15 @@ result_table <- data.table(
 result_table[, init_not := abs(lev_ratio) * init_eqty]
 result_table[, init_int := round(init_not / (mult * init_prc))]
 result_table[, chg_not := init_int * prcshock * mult]
-result_table[, equity := init_eqty * ( 1+  lev_ratio * prcshock / init_prc)]
+result_table[, ret := prcshock / init_prc]
+result_table[, equity := init_eqty * ( 1+ lev_ratio * ret)]
 result_table[, new_not := init_not + chg_not]
 result_table[, reba_not := lev_ratio * equity - sign(lev_ratio) * new_not]
 result_table[, int_buy := round(reba_not / (mult * (init_prc + prcshock)))]
 result_table[, reba_oipct := int_buy / open_int]
+result_table[, raw_imp := ret]
 result_table[, reba_imp := 0.3 * sqrt(reba_oipct)]
-result_table[, total_imp := reba_imp + prcshock / init_prc]
+result_table[, total_imp := raw_imp + reba_imp ]
 result_table[, final_prc := (1+total_imp) * init_prc]
-
 result_table
 ​
