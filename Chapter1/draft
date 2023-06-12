@@ -91,4 +91,36 @@ L_t \approx L_0 \left(\frac{S_t}{S_0)}\right)^\lambda \exp\left(-\frac{\lambda^2
 $$
 ​
 where $V_t =\sum r^2_i$, which is the realised variance of the underlying asset $S$ from time 0 to time $t$.
+
+
+
+mult <- 1000
+initprc <- 17
+initeqty = 1000000000 / 2
+oi <- 142761 * 2
+leverage = 2
+
+
+shocks <- seq(0.5, 10, by = 0.5)
+
+result_table <- data.table(
+    init_prc = initprc,
+    init_eqty = initeqty,
+    open_int = oi, 
+    lev_ratio = leverage,
+    prcshock = shocks
+)
+result_table[, init_not := abs(lev_ratio) * init_eqty]
+result_table[, init_int := round(init_not / (mult * init_prc))]
+result_table[, chg_not := init_int * prcshock * mult]
+result_table[, equity := init_eqty * ( 1+  lev_ratio * prcshock / init_prc)]
+result_table[, new_not := init_not + chg_not]
+result_table[, reba_not := lev_ratio * equity - sign(lev_ratio) * new_not]
+result_table[, int_buy := round(reba_not / (mult * (init_prc + prcshock)))]
+result_table[, reba_oipct := int_buy / open_int]
+result_table[, reba_imp := 0.3 * sqrt(reba_oipct)]
+result_table[, total_imp := reba_imp + prcshock / init_prc]
+result_table[, final_prc := (1+total_imp) * init_prc]
+
+result_table
 ​
