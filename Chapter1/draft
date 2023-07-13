@@ -125,3 +125,38 @@ result_table[, total_imp := raw_imp + reba_imp ]
 result_table[, final_prc := (1+total_imp) * init_prc]
 result_table
 ​
+
+
+# Calculate the sample covariance matrix
+S_r = r.unstack(level=-1).cov().values  # Covariance of stock returns
+
+# Reshape signals into 2D matrix
+x_reshaped = x.unstack(level=-1)
+
+# Calculate the sample covariance matrix of the signals
+S_x = x_reshaped.cov().values
+
+# Create cross-covariance matrix
+S_rx = np.empty((N, M*N))
+for i in range(N):
+    for j in range(M*N):
+        S_rx[i, j] = np.cov(r.loc[(slice(None), i), 'Forward_Returns'], x.iloc[:, j])[0, 1]
+
+# Step 3: Singular Value Decomposition
+# Compute the regularized adjusted cross-covariance matrix
+Sigma_r_inv_sqrt = np.linalg.inv(sqrtm(S_r))
+Sigma_x_inv_sqrt = np.linalg.inv(sqrtm(S_x))
+Sigma_tilde_rx = Sigma_r_inv_sqrt @ S_rx @ Sigma_x_inv_sqrt
+
+# Perform SVD
+U, s, Vt = svd(Sigma_tilde_rx)
+
+# Step 4: Portfolio Weights Calculation
+# Define the investor's risk aversion
+gamma = 1.0
+
+# Calculate the portfolio weights matrix A
+A = (1 / gamma) * Sigma_x_inv_sqrt @ Vt.T @ np.diag(s) @ U.T @ Sigma_r_inv_sqrt
+
+print("Portfolio weights matrix A:")
+print(A)
