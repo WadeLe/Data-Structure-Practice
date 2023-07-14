@@ -3,6 +3,7 @@ from sklearn.cross_decomposition import PLSRegression
 from sklearn.decomposition import PCA
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from scipy.optimize import minimize
 
 class Model:
     def fit(self, X, Y):
@@ -60,6 +61,61 @@ class PLSR(Model):
         return self.model.coef_
 
 
+class TLS(Model):
+    def fit(self, X, Y):
+        # Normalize the data
+        X = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
+        # Y = (Y - np.mean(Y)) / np.std(Y)
+
+        # Augment the data matrix
+        Z = np.column_stack((X, Y))
+
+        # Perform SVD
+        U, S, Vt = np.linalg.svd(Z, full_matrices=False)
+
+        # The weights for the TLS solution are given by the last column of V
+        # We exclude the last element because it corresponds to Y
+        self.weights = Vt.T[:, -1][:-1]
+
+        # Calculate the combined signal
+        combined_signal = np.dot(X, self.weights)
+
+        # Check for positive correlation with the target
+        corr = np.corrcoef(combined_signal, Y)[0, 1]
+        if corr < 0:
+            # If the correlation is negative, flip the sign of the weights
+            self.weights = -self.weights
+
+    def get_weights(self):
+        return self.weights
+
+class NonNegativeLinearRegression(Model):
+    def fit(self, X, Y):
+        self.model = LinearRegression(positive=True).fit(X, Y)
+
+    def get_weights(self):
+        return self.model.coef_
+
+class PositiveSumLinearRegression(Model):
+    def fit(self, X, Y):
+        # Define objective function: (Y - Xw)^2
+        objective = lambda w: np.sum((Y - np.dot(X, w)) ** 2)
+        
+        # Initial guess for w is a vector of ones
+        w0 = np.ones(X.shape[1])
+        
+        # Define the constraint: sum(w) = 1
+        constraint = {'type': 'eq', 'fun': lambda w: np.sum(w) - 1}
+        
+        # Perform the optimization
+        result = minimize(objective, w0, constraints=[constraint])
+        
+        # Store the optimized weights
+        self.weights = result.x
+
+    def get_weights(self):
+        return self.weights
+
 def get_model(model_name):
     models = {
         "ols": OLS(),
@@ -67,7 +123,10 @@ def get_model(model_name):
         "lasso": LassoModel(),
         "elasticnet": ElasticNetModel(),
         "pcr": PCR(),
-        "plsr": PLSR()
+        "plsr": PLSR(),
+        "tls": TLS(),
+        "nonnegativelinear": NonNegativeLinearRegression(),
+        "positivesumlinear": PositiveSumLinearRegression()
     }
     
     try:
