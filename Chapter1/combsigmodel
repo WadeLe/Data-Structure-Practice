@@ -1,0 +1,76 @@
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
+from sklearn.cross_decomposition import PLSRegression
+from sklearn.decomposition import PCA
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+class Model:
+    def fit(self, X, Y):
+        raise NotImplementedError
+    
+    def get_weights(self):
+        raise NotImplementedError
+
+
+class OLS(Model):
+    def fit(self, X, Y):
+        self.model = LinearRegression().fit(X, Y)
+
+    def get_weights(self):
+        return self.model.coef_
+
+
+class RidgeModel(Model):
+    def fit(self, X, Y, alpha=1.0):
+        self.model = Ridge(alpha=alpha).fit(X, Y)
+
+    def get_weights(self):
+        return self.model.coef_
+
+
+class LassoModel(Model):
+    def fit(self, X, Y, alpha=0.1):
+        self.model = Lasso(alpha=alpha).fit(X, Y)
+
+    def get_weights(self):
+        return self.model.coef_
+
+
+class ElasticNetModel(Model):
+    def fit(self, X, Y, alpha=0.1, l1_ratio=0.5):
+        self.model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio).fit(X, Y)
+
+    def get_weights(self):
+        return self.model.coef_
+
+
+class PCR(Model):
+    def fit(self, X, Y, n_components=1):
+        self.model = make_pipeline(StandardScaler(), PCA(n_components=n_components), LinearRegression()).fit(X, Y)
+
+    def get_weights(self):
+        return self.model[-1].coef_
+
+
+class PLSR(Model):
+    def fit(self, X, Y, n_components=1):
+        self.model = PLSRegression(n_components=n_components).fit(X, Y)
+
+    def get_weights(self):
+        return self.model.coef_
+
+
+def get_model(model_name):
+    models = {
+        "ols": OLS(),
+        "ridge": RidgeModel(),
+        "lasso": LassoModel(),
+        "elasticnet": ElasticNetModel(),
+        "pcr": PCR(),
+        "plsr": PLSR()
+    }
+    
+    try:
+        return models[model_name.lower()]
+    except KeyError:
+        raise ValueError(f"Invalid model name '{model_name}'. Valid options are: {list(models.keys())}")
