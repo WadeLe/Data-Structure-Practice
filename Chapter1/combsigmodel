@@ -116,7 +116,7 @@ class PositiveSumLinearRegression(Model):
     def get_weights(self):
         return self.weights
 
-def get_model(model_name):
+def get_model(model_name=None):
     models = {
         "ols": OLS(),
         "ridge": RidgeModel(),
@@ -128,8 +128,11 @@ def get_model(model_name):
         "nonnegativelinear": NonNegativeLinearRegression(),
         "positivesumlinear": PositiveSumLinearRegression()
     }
-    
-    try:
-        return models[model_name.lower()]
-    except KeyError:
-        raise ValueError(f"Invalid model name '{model_name}'. Valid options are: {list(models.keys())}")
+
+    if model_name is None:
+        return list(models.keys())
+    else:
+        try:
+            return models[model_name.lower()]
+        except KeyError:
+            raise ValueError(f"Invalid model name '{model_name}'. Valid options are: {list(models.keys())}")
