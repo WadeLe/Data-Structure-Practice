@@ -160,3 +160,55 @@ A = (1 / gamma) * Sigma_x_inv_sqrt @ Vt.T @ np.diag(s) @ U.T @ Sigma_r_inv_sqrt
 
 print("Portfolio weights matrix A:")
 print(A)
+
+
+# Required libraries
+library(lubridate)
+library(data.table)
+
+# Function to calculate trading days
+trading_days <- function(date) {
+  # Convert the date to a Date object if it's not already
+  if (class(date) != "Date") {
+    date <- as.Date(date)
+  }
+  
+  # Calculate the last calendar day of the previous month
+  prev_month_end <- date - days(day(date))
+  
+  # Get a date in the previous month
+  prev_month_date <- date - days(day(date) - 1) - months(1)
+  
+  # Get the sequence of trading dates for the previous month
+  prev_month_days <- dateSeq(prev_month_date, prev_month_end)
+  
+  # Select the last trading day of the previous month
+  last_prev_day <- max(prev_month_days)
+  
+  # Calculate the last calendar day of the current month
+  curr_month_end <- date + days(days_in_month(date) - day(date))
+  
+  # Get the sequence of trading dates for the current month
+  curr_month_days <- dateSeq(date, curr_month_end)
+  
+  # Select the last trading day of the current month
+  last_curr_day <- max(curr_month_days)
+  
+  # Get the sequence of trading dates from the last trading day of the previous month to the last trading day of the current month
+  trading_dates <- dateSeq(last_prev_day, last_curr_day)
+  
+  # Calculate the number of trading days from the last trading day of the previous month
+  prev_month_trading <- sum(trading_dates <= date)
+  
+  # Calculate the number of trading days to the last trading day of the current month
+  curr_month_trading <- sum(trading_dates >= date)
+  
+  # Create a data table with the given date, the number of trading days from the last trading day of the previous month, and the number of trading days to the last trading day of the current month
+  dt <- data.table(
+    "date" = date, 
+    "prev_month_days" = prev_month_trading, 
+    "curr_month_days" = curr_month_trading
+  )
+  
+  return(dt)
+}
