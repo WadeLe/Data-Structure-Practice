@@ -317,3 +317,80 @@ for i in range(len(dates)):
     # Use the ranks to construct your portfolio for the next period
     # ...
 
+# Import necessary libraries
+import pandas as pd
+from dateutil.relativedelta import relativedelta
+import xgboost as xgb
+
+# Assume X and Y are your dataframes with date, ticker, characteristics, and forward returns
+X.sort_values(by=['date', 'ticker'], inplace=True)
+Y.sort_values(by=['date', 'ticker'], inplace=True)
+
+# Initialize the LTR model, e.g., pairwise ranking in XGBoost
+params = {
+    'objective': 'rank:pairwise',
+    'eta': 0.1,
+    'gamma': 1.0,
+    'min_child_weight': 0.1,
+    'max_depth': 6,
+}
+
+# Get unique dates
+dates = sorted(X['date'].unique())
+
+# Define the training and prediction window lengths
+train_win = relativedelta(months=25)
+pred_win = relativedelta(months=1)
+
+# Initialize an empty DataFrame to store the ranks
+all_ranks = pd.DataFrame()
+
+def train_model(X_train, y_train, params):
+    # Prepare the data for XGBoost
+    dtrain = xgb.DMatrix(X_train.drop(['date', 'ticker'], axis=1), label=y_train)
+
+    # Train the model on the current window of data
+    bst = xgb.train(params, dtrain)
+    
+    return bst
+
+def predict_ranks(bst, X_pred):
+    # Prepare the data for XGBoost
+    dpred = xgb.DMatrix(X_pred.drop(['date', 'ticker'], axis=1))
+
+    # Predict the scores for the prediction window
+    y_pred = bst.predict(dpred)
+
+    # Rank the stocks based on the predicted scores
+    ranks = pd.Series(y_pred, index=pd.MultiIndex.from_arrays([X_pred['date'], X_pred['ticker']]), name='rank').sort_values(ascending=False)
+    
+    return ranks
+
+# Loop over the dates in the dataset
+for i in range(len(dates)):
+    # Get the current date
+    curr_date = dates[i]
+
+    # Define the start and end dates of the training window
+    train_start = curr_date - train_win - pred_win
+    train_end = curr_date - pred_win
+
+    # Define the start and end dates of the prediction window
+    pred_start = curr_date
+    pred_end = curr_date + pred_win
+
+    # Select the training data for the current window
+    X_train = X[(X['date'] >= train_start) & (X['date'] < train_end)]
+    y_train = Y[(Y['date'] >= train_start) & (Y['date'] < train_end)]['forward_return']
+
+    # Train the model on the current window of data
+    bst = train_model(X_train, y_train, params)
+
+    # Select the data for the prediction window
+    X_pred = X[(X['date'] >= pred_start) & (X['date'] < pred_end)]
+
+    # Predict the ranks for the prediction window
+    ranks = predict_ranks(bst, X_pred)
+
+    # Append the ranks to the DataFrame
+    all_ranks = all_ranks.append(ranks)
