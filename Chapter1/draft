@@ -394,3 +394,160 @@ for i in range(len(dates)):
 
     # Append the ranks to the DataFrame
     all_ranks = all_ranks.append(ranks)
+
+
+# Import
+import torch
+# ↓Place the downloaded 'fast_soft_sort' in the same folder.
+from fast_soft_sort.pytorch_ops import soft_rank, soft_sort  
+from pathlib import Path
+from datetime import datetime as dt
+import pandas as pd
+import numpy as np
+import xgboost as xgb
+import scipy.stats
+from matplotlib import pyplot as plt
+
+# Constants
+TARGET_NAME = 'target'
+PREDICTION_NAME = 'prediction'
+MODEL_FILE = Path('corr_objective_xgb_example_model.xgb')
+PROGRAM_NAME = 'corr_objective_xgb_example'
+
+# main function
+def main():
+    
+    print(PROGRAM_NAME, dt.strftime(dt.now(), '%m/%d %H:%M:%S'), 'start of main function')
+    print(PROGRAM_NAME, dt.strftime(dt.now(), '%m/%d %H:%M:%S'), 'loading training data')
+    
+    # Training data
+    temp_df = pd.read_parquet('numerai_training_data_int8.parquet', engine='fastparquet')
+
+    # To save memory and exclude overlap, extract data at 4round intervals.
+    df = temp_df[pd.to_numeric(temp_df['era']) % 4 == 0]
+
+    # Feature names
+    f_names = [f for f in df.columns if f.startswith('feature')]
+
+    # Preparation of training data 
+    # Split the train and test data before and after era_th for early stopping (about 7:3 ratio).
+    era_th = 420
+    df_train = df[pd.to_numeric(df['era']) < era_th]
+    df_test = df[pd.to_numeric(df['era']) >= era_th]
+    eval_set = [(df_train[f_names], df_train[TARGET_NAME]), (df_test[f_names], df_test[TARGET_NAME])]
+
+    model = xgb.XGBRegressor(max_depth=5,  # familiar setting
+                         learning_rate=0.01,  # familiar setting
+                         n_estimators=5000,  # test saturates around 3000.
+                         n_jobs=-1,
+                         colsample_bytree=0.1,  # familiar setting
+                         objective=custom_corr  # Set custom objective function (for learning)
+                         )
+
+    print(PROGRAM_NAME, dt.strftime(dt.now(), '%m/%d %H:%M:%S'), 'start learning')
+
+    evals_result = {}
+    model.fit(df_train[f_names],
+              df_train[TARGET_NAME],
+              eval_set=eval_set,
+              eval_metric=eval_corr,  # This is for early stopping.
+              early_stopping_rounds=1000,
+              callbacks=[xgb.callback.record_evaluation(evals_result)])
+
+    # Save learning model
+    print(PROGRAM_NAME, dt.strftime(dt.now(), '%m/%d %H:%M:%S'), 'save learning model')
+    model._Booster.save_model(MODEL_FILE)
+
+    # Output learning graph
+    plt.plot([-1.0 * n for n in evals_result['validation_0']['corr']], label='train corr')
+    plt.plot([-1.0 * n for n in evals_result['validation_1']['corr']], label='test corr')
+    plt.grid()
+    plt.legend()
+    plt.xlabel('rounds')
+    plt.ylabel('corr')
+    plt.savefig('graph.png') # Save the graph as png
+
+    # Creating a file for numerai's Diagnostic
+    print(PROGRAM_NAME, dt.strftime(dt.now(), '%m/%d %H:%M:%S'), 'loading valid data')
+
+    # Loading valid data
+    df_valid = pd.read_parquet('numerai_validation_data_int8.parquet', engine='fastparquet')
+
+    # Prediction
+    df_valid[PREDICTION_NAME] = model.predict(df_valid[f_names])
+
+    # Output to csv
+    df_valid[PREDICTION_NAME].to_csv('valid_pred.csv', header=True)
+
+def custom_corr(target, pred):
+
+    # Reference link) post by paulito
+    # https://forum.numer.ai/t/differentiable-spearman-in-pytorch-optimize-for-corr-directly/2287/19
+
+    n_pred = pred.shape[0]
+    n_target = target.shape[0]
+
+    th_pred = torch.tensor(pred.reshape(1, n_pred), requires_grad=True)
+    th_target = torch.tensor(target.reshape(1, n_target))
+
+    # There seems to be a case where an error occurs if pred is too close to 0.5 in the first round.
+    # Exception handling is under consideration, but it sometimes works if you use float64 as below.
+    # th_pred = torch.tensor(pred.reshape(1, n_pred), requires_grad=True, dtype=torch.float64)
+    # th_target = torch.tensor(target.reshape(1, n_target), dtype=torch.float64)
+
+    corr = spearman(th_target, th_pred)
+
+    # rmse (for reference)
+    # rmse = np.sqrt(np.sum(np.square(pred - target)) / len(pred))
+    # print('corr:', float(corr), ' rmse(for reference):', rmse)
+
+    corr_grad = torch.autograd.grad(corr, th_pred)[0]
+    corr_grad = -1.0 * corr_grad.detach().numpy()
+
+    return corr_grad[0], np.ones(corr_grad.shape)[0]
+
+
+def spearman(target, pred):
+
+    pred = soft_rank(pred,
+                     regularization='l2',  # configuration point
+                     regularization_strength=0.01  # configuration point
+                     )
+    if len(pred[0]) > 0:
+        corr = corrcoef(target, pred / len(pred[0]))
+    else:
+        corr = 0.0
+
+    return corr
+
+def corrcoef(target, pred):
+
+    # Reference link
+    # https://forum.numer.ai/t/differentiable-spearman-in-pytorch-optimize-for-corr-directly/2287/19
+
+    # np.corrcoef in torch from @mdo
+    # https://forum.numer.ai/t/custom-corr-functions-for-xgboost-using-pytorch/960
+
+    pred_n = pred - pred.mean()
+    target_n = target - target.mean()
+
+    if pred_n.norm() == 0.0:
+        pred_n = pred_n / 0.000001
+        # To avoid when pred_n.norm() seems to become 0 in the first round of learning.
+    else:
+        pred_n = pred_n / pred_n.norm()
+
+    target_n = target_n / target_n.norm()
+
+    return (pred_n * target_n).sum()
+
+def eval_corr(target, pred):
+
+    # This is used for determining early_stopping.
+
+    corr = scipy.stats.spearmanr(target, pred.get_label())[0]
+
+    # corr = np.corrcoef(target, pred.get_label())[0][1]
+
+    return 'corr', -1.0 * corr  # To aim for the minimum, we minus it
+
