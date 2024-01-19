@@ -1,553 +1,174 @@
-library(data.table)
-
-# Assuming you have two data.tables called 'viyy' and 'svxy' with columns 'date' and 'adj_price'
-# 'signal' is a separate data.table with columns 'date' and 'signal'
-
-# Merge the viyy and svxy data.tables on 'date' column
-merged_data <- merge(viyy, svxy, by = "date", all = TRUE)
-
-# Merge the signal data.table with merged_data on 'date' column
-merged_data <- merge(merged_data, signal, by = "date", all = TRUE)
-
-# Calculate the 1-year moving average for the signal
-merged_data[, signal_ma := frollmean(signal, n = 252, align = "right", fill = NA)]
-
-# Extract the last trading day of each week
-weekly_data <- merged_data[, .SD[.N], by = .(yearweek(date))]
-
-# Create a function to determine the position
-get_position <- function(signal, signal_ma) {
-  position <- ifelse(!is.na(signal) & signal < signal_ma, 1,
-                     ifelse(!is.na(signal) & signal > signal_ma, -1, 0))
-  return(position)
-}
-
-# Apply the function to calculate positions for each row in weekly_data
-weekly_data[, position := get_position(signal, signal_ma)]
-
-# Create a function to calculate the portfolio value
-calculate_portfolio <- function(position, adj_price_x, adj_price_y) {
-  value <- position * ifelse(!is.na(adj_price_x) & !is.na(adj_price_y), adj_price_x + adj_price_y,
-                             ifelse(!is.na(adj_price_x), adj_price_x,
-                                    ifelse(!is.na(adj_price_y), adj_price_y, 0)))
-  return(value)
-}
-
-# Apply the function to calculate portfolio values for each row in weekly_data
-weekly_data[, value := calculate_portfolio(position, adj_price.x, adj_price.y)]
-
-# Calculate the cumulative returns of the portfolio
-weekly_data[, returns := cumsum(value) / sum(abs(value))]
-
-# Print the positions and portfolio data.tables
-print(weekly_data[, .(date, position)])
-print(weekly_data[, .(date, value, returns)])
+## Definitions 
 
 
+For the fixed-weight (FW) portfolio, we have
 
-We express the value of a leveraged ETF $L$ at time $t$ as a function of the returns of the index, and its leverage ratio $\lambda$"
-​
 $$
-L_t = L_0 \Pi \left(1 + \lambda r_i\right)
+(1+g_{FW})^N = \left(1+\sum^M_{i=1} w_i r_{i1}\right) \cdot \left(1+\sum^M_{i=1} w_i r_{iN}\right)
 $$
-​
-or 
-​
+
+For buy-and-hold portfolio:
+
 $$
-\log \left(\frac{L_t}{L_0}\right) \approx \sum \left(\lambda r_i - \frac{\lambda^2}{2} r^2_i\right)
+(1+g_{BH})^N = w_1 (1+g_1)^N + \cdot + w_M (1+g_M)^N
 $$
-​
-​
-Note that $\ln(1+x) \approx x - \frac{1}{2}x^2$. 
-​
-​
-We can do the analogous decompostion of the underlying asset $S$ at time $t$:
-​
+
+and $g_1, \cdot, g_M$ are the geometric returns of individual assets. 
+
+The rebalance alpha is $\alpha = g_{FW} - g_{BH}$
+
+The average of geometric returns:
+
 $$
-S_t = S_0 \Pi \left(1 +  r_i\right)
+\bar g = \sum^M_{i=1} w_i g_i
 $$
-​
+
+The volatility effect is the difference between the geometric returns of the FW portfolio and $\bar g$:
+
 $$
-\log \left(\frac{S_t}{S_0}\right) \approx \sum \left(r_i - \frac{1}{2} r^2_i\right)
+e_v = g_{FW} - \bar g
 $$
-​
-We can multiple it by the leverage ratio $\lambda$
-​
+
+The return effect is is the difference between the geometric returns of the BH portfolio and $\bar g$:
+
 $$
-\lambda \log \left(\frac{S_t}{S_0}\right) \approx \lambda \sum \left(r_i - \frac{1}{2} r^2_i\right)
+e_r = g_{BH} - \bar g
 $$
-​
-Consider 
-​
+
+Rebalancing alpha is hence the difference between the volatility and return effect:
+
 $$
-\ln \left(\frac{L_t}{L_0}\right) - \lambda \ln \left(\frac{S_t}{S_0}\right) \approx -\frac{\lambda^2- \lambda}{2} \sum r^2_i
+\alpha = g_{FW} - g_{BH} = e_v - e_r
 $$
-​
-​
-Therefore, solving for $L_t$ the value of the leveraged ETF at time $t$, we get
-​
+
+### Diversification Return
+
+The approximate relationship between arithmetic and geometirc means:
+
 $$
-L_t \approx L_0 \left(\frac{S_t}{S_0)}\right)^\lambda \exp\left(-\frac{\lambda^2-\lambda}{2}V_t\right)
+g \approx \mu - \frac{\sigma^2}{2}
 $$
-​
-where $V_t =\sum r^2_i$, which is the realised variance of the underlying asset $S$ from time 0 to time $t$.
-
-
-
-mult <- 1000
-initprc <- 17
-initeqty = 1000000000 / 2
-oi <- 142761 * 2
-leverage = 2
-
-
-shocks <- seq(0.5, 10, by = 0.5)
-
-result_table <- data.table(
-    init_prc = initprc,
-    init_eqty = initeqty,
-    open_int = oi, 
-    lev_ratio = leverage,
-    prcshock = shocks
-)
-result_table[, init_not := abs(lev_ratio) * init_eqty]
-result_table[, init_int := round(init_not / (mult * init_prc))]
-result_table[, chg_not := init_int * prcshock * mult]
-result_table[, ret := prcshock / init_prc]
-result_table[, equity := init_eqty * ( 1+ lev_ratio * ret)]
-result_table[, new_not := init_not + chg_not]
-result_table[, reba_not := lev_ratio * equity - sign(lev_ratio) * new_not]
-result_table[, int_buy := round(reba_not / (mult * (init_prc + prcshock)))]
-result_table[, reba_oipct := int_buy / open_int]
-result_table[, raw_imp := ret]
-result_table[, reba_imp := 0.3 * sqrt(reba_oipct)]
-result_table[, total_imp := raw_imp + reba_imp ]
-result_table[, final_prc := (1+total_imp) * init_prc]
-result_table
-​
-
-
-# Calculate the sample covariance matrix
-S_r = r.unstack(level=-1).cov().values  # Covariance of stock returns
-
-# Reshape signals into 2D matrix
-x_reshaped = x.unstack(level=-1)
-
-# Calculate the sample covariance matrix of the signals
-S_x = x_reshaped.cov().values
-
-# Create cross-covariance matrix
-S_rx = np.empty((N, M*N))
-for i in range(N):
-    for j in range(M*N):
-        S_rx[i, j] = np.cov(r.loc[(slice(None), i), 'Forward_Returns'], x.iloc[:, j])[0, 1]
-
-# Step 3: Singular Value Decomposition
-# Compute the regularized adjusted cross-covariance matrix
-Sigma_r_inv_sqrt = np.linalg.inv(sqrtm(S_r))
-Sigma_x_inv_sqrt = np.linalg.inv(sqrtm(S_x))
-Sigma_tilde_rx = Sigma_r_inv_sqrt @ S_rx @ Sigma_x_inv_sqrt
-
-# Perform SVD
-U, s, Vt = svd(Sigma_tilde_rx)
-
-# Step 4: Portfolio Weights Calculation
-# Define the investor's risk aversion
-gamma = 1.0
-
-# Calculate the portfolio weights matrix A
-A = (1 / gamma) * Sigma_x_inv_sqrt @ Vt.T @ np.diag(s) @ U.T @ Sigma_r_inv_sqrt
-
-print("Portfolio weights matrix A:")
-print(A)
-
-
-# Required libraries
-library(lubridate)
-library(data.table)
-
-# Function to calculate trading days
-trading_days <- function(date) {
-  # Convert the date to a Date object if it's not already
-  if (class(date) != "Date") {
-    date <- as.Date(date)
-  }
-  
-  # Calculate the last calendar day of the previous month
-  prev_month_end <- date - days(day(date))
-  
-  # Get a date in the previous month
-  prev_month_date <- date - days(day(date) - 1) - months(1)
-  
-  # Get the sequence of trading dates for the previous month
-  prev_month_days <- dateSeq(prev_month_date, prev_month_end)
-  
-  # Select the last trading day of the previous month
-  last_prev_day <- max(prev_month_days)
-  
-  # Calculate the last calendar day of the current month
-  curr_month_end <- date + days(days_in_month(date) - day(date))
-  
-  # Get the sequence of trading dates for the current month
-  curr_month_days <- dateSeq(date, curr_month_end)
-  
-  # Select the last trading day of the current month
-  last_curr_day <- max(curr_month_days)
-  
-  # Get the sequence of trading dates from the last trading day of the previous month to the last trading day of the current month
-  trading_dates <- dateSeq(last_prev_day, last_curr_day)
-  
-  # Calculate the number of trading days from the last trading day of the previous month
-  prev_month_trading <- sum(trading_dates <= date)
-  
-  # Calculate the number of trading days to the last trading day of the current month
-  curr_month_trading <- sum(trading_dates >= date)
-  
-  # Create a data table with the given date, the number of trading days from the last trading day of the previous month, and the number of trading days to the last trading day of the current month
-  dt <- data.table(
-    "date" = date, 
-    "prev_month_days" = prev_month_trading, 
-    "curr_month_days" = curr_month_trading
-  )
-  
-  return(dt)
-}
-
-
-
-
-
-
-# Import necessary libraries
-import numpy as np
-import pandas as pd
-import lightgbm as lgb
-from sklearn.model_selection import train_test_split
-
-# Suppose X is the stock characteristics and y is the forward stock returns
-X = ...  # Load or compute your features here
-y = ...  # Load or compute your labels here
-
-# Split the data into training and testing sets
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Create a LightGBM dataset for training
-train_data = lgb.Dataset(X_train, label=y_train)
-
-# Specify the configuration of the model
-params = {
-    'objective': 'lambdarank',
-    'metric': 'ndcg',
-    'ndcg_eval_at': [1, 5, 10],
-    'learning_rate': 0.1,
-    'num_leaves': 31,
-    'min_data_in_leaf': 30,
-    'num_iterations': 100,
-    'verbose': 1
-}
-
-# Train the model
-model = lgb.train(params, train_data)
-
-# Predict the scores for the test data
-y_pred = model.predict(X_test)
-
-# Rank the stocks based on the predicted scores
-rankings = np.argsort(y_pred)[::-1]  # Indices of stocks sorted by their scores
-
-
-
-# Import necessary libraries
-import pandas as pd
-from dateutil.relativedelta import relativedelta
-import lightgbm as lgb
-
-# Assume X and Y are your dataframes with date, ticker, characteristics, and forward returns
-X.sort_values(by=['date', 'ticker'], inplace=True)
-Y.sort_values(by=['date', 'ticker'], inplace=True)
-
-# Initialize the LTR model, e.g., LambdaRank in LightGBM
-params = {
-    'objective': 'lambdarank',
-    'metric': 'ndcg',
-    'learning_rate': 0.1,
-    'num_leaves': 31,
-    'min_data_in_leaf': 30,
-    'num_iterations': 100,
-    'verbose': 1
-}
-gbm = lgb.LGBMRanker(**params)
-
-# Get unique dates
-dates = sorted(X['date'].unique())
-
-# Define the training and prediction window lengths
-train_win = relativedelta(months=25)
-pred_win = relativedelta(months=1)
-
-# Loop over the dates in the dataset
-for i in range(len(dates)):
-    # Get the current date
-    curr_date = dates[i]
-
-    # Define the start and end dates of the training window
-    train_start = curr_date - train_win - pred_win
-    train_end = curr_date - pred_win
-
-    # Define the start and end dates of the prediction window
-    pred_start = curr_date
-    pred_end = curr_date + pred_win
-
-    # Select the training data for the current window
-    X_train = X[(X['date'] >= train_start) & (X['date'] < train_end)]
-    y_train = Y[(Y['date'] >= train_start) & (Y['date'] < train_end)]['forward_return']
-
-    # Train the model on the current window of data
-    gbm.fit(X_train.drop(['date', 'ticker'], axis=1), y_train, group=[X_train.shape[0]])
-
-    # Select the data for the prediction window
-    X_pred = X[(X['date'] >= pred_start) & (X['date'] < pred_end)]
-
-    # Predict the scores for the prediction window
-    y_pred = gbm.predict(X_pred.drop(['date', 'ticker'], axis=1))
-
-    # Rank the stocks based on the predicted scores
-    ranks = pd.Series(y_pred, index=X_pred['ticker']).sort_values(ascending=False)
-
-    # Use the ranks to construct your portfolio for the next period
-    # ...
-
-# Import necessary libraries
-import pandas as pd
-from dateutil.relativedelta import relativedelta
-import xgboost as xgb
-
-# Assume X and Y are your dataframes with date, ticker, characteristics, and forward returns
-X.sort_values(by=['date', 'ticker'], inplace=True)
-Y.sort_values(by=['date', 'ticker'], inplace=True)
-
-# Initialize the LTR model, e.g., pairwise ranking in XGBoost
-params = {
-    'objective': 'rank:pairwise',
-    'eta': 0.1,
-    'gamma': 1.0,
-    'min_child_weight': 0.1,
-    'max_depth': 6,
-}
-
-# Get unique dates
-dates = sorted(X['date'].unique())
-
-# Define the training and prediction window lengths
-train_win = relativedelta(months=25)
-pred_win = relativedelta(months=1)
-
-# Initialize an empty DataFrame to store the ranks
-all_ranks = pd.DataFrame()
-
-def train_model(X_train, y_train, params):
-    # Prepare the data for XGBoost
-    dtrain = xgb.DMatrix(X_train.drop(['date', 'ticker'], axis=1), label=y_train)
-
-    # Train the model on the current window of data
-    bst = xgb.train(params, dtrain)
-    
-    return bst
-
-def predict_ranks(bst, X_pred):
-    # Prepare the data for XGBoost
-    dpred = xgb.DMatrix(X_pred.drop(['date', 'ticker'], axis=1))
-
-    # Predict the scores for the prediction window
-    y_pred = bst.predict(dpred)
-
-    # Rank the stocks based on the predicted scores
-    ranks = pd.Series(y_pred, index=pd.MultiIndex.from_arrays([X_pred['date'], X_pred['ticker']]), name='rank').sort_values(ascending=False)
-    
-    return ranks
-
-# Loop over the dates in the dataset
-for i in range(len(dates)):
-    # Get the current date
-    curr_date = dates[i]
-
-    # Define the start and end dates of the training window
-    train_start = curr_date - train_win - pred_win
-    train_end = curr_date - pred_win
-
-    # Define the start and end dates of the prediction window
-    pred_start = curr_date
-    pred_end = curr_date + pred_win
-
-    # Select the training data for the current window
-    X_train = X[(X['date'] >= train_start) & (X['date'] < train_end)]
-    y_train = Y[(Y['date'] >= train_start) & (Y['date'] < train_end)]['forward_return']
-
-    # Train the model on the current window of data
-    bst = train_model(X_train, y_train, params)
-
-    # Select the data for the prediction window
-    X_pred = X[(X['date'] >= pred_start) & (X['date'] < pred_end)]
-
-    # Predict the ranks for the prediction window
-    ranks = predict_ranks(bst, X_pred)
-
-    # Append the ranks to the DataFrame
-    all_ranks = all_ranks.append(ranks)
-
-
-# Import
-import torch
-# ↓Place the downloaded 'fast_soft_sort' in the same folder.
-from fast_soft_sort.pytorch_ops import soft_rank, soft_sort  
-from pathlib import Path
-from datetime import datetime as dt
-import pandas as pd
-import numpy as np
-import xgboost as xgb
-import scipy.stats
-from matplotlib import pyplot as plt
-
-# Constants
-TARGET_NAME = 'target'
-PREDICTION_NAME = 'prediction'
-MODEL_FILE = Path('corr_objective_xgb_example_model.xgb')
-PROGRAM_NAME = 'corr_objective_xgb_example'
-
-# main function
-def main():
-    
-    print(PROGRAM_NAME, dt.strftime(dt.now(), '%m/%d %H:%M:%S'), 'start of main function')
-    print(PROGRAM_NAME, dt.strftime(dt.now(), '%m/%d %H:%M:%S'), 'loading training data')
-    
-    # Training data
-    temp_df = pd.read_parquet('numerai_training_data_int8.parquet', engine='fastparquet')
-
-    # To save memory and exclude overlap, extract data at 4round intervals.
-    df = temp_df[pd.to_numeric(temp_df['era']) % 4 == 0]
-
-    # Feature names
-    f_names = [f for f in df.columns if f.startswith('feature')]
-
-    # Preparation of training data 
-    # Split the train and test data before and after era_th for early stopping (about 7:3 ratio).
-    era_th = 420
-    df_train = df[pd.to_numeric(df['era']) < era_th]
-    df_test = df[pd.to_numeric(df['era']) >= era_th]
-    eval_set = [(df_train[f_names], df_train[TARGET_NAME]), (df_test[f_names], df_test[TARGET_NAME])]
-
-    model = xgb.XGBRegressor(max_depth=5,  # familiar setting
-                         learning_rate=0.01,  # familiar setting
-                         n_estimators=5000,  # test saturates around 3000.
-                         n_jobs=-1,
-                         colsample_bytree=0.1,  # familiar setting
-                         objective=custom_corr  # Set custom objective function (for learning)
-                         )
-
-    print(PROGRAM_NAME, dt.strftime(dt.now(), '%m/%d %H:%M:%S'), 'start learning')
-
-    evals_result = {}
-    model.fit(df_train[f_names],
-              df_train[TARGET_NAME],
-              eval_set=eval_set,
-              eval_metric=eval_corr,  # This is for early stopping.
-              early_stopping_rounds=1000,
-              callbacks=[xgb.callback.record_evaluation(evals_result)])
-
-    # Save learning model
-    print(PROGRAM_NAME, dt.strftime(dt.now(), '%m/%d %H:%M:%S'), 'save learning model')
-    model._Booster.save_model(MODEL_FILE)
-
-    # Output learning graph
-    plt.plot([-1.0 * n for n in evals_result['validation_0']['corr']], label='train corr')
-    plt.plot([-1.0 * n for n in evals_result['validation_1']['corr']], label='test corr')
-    plt.grid()
-    plt.legend()
-    plt.xlabel('rounds')
-    plt.ylabel('corr')
-    plt.savefig('graph.png') # Save the graph as png
-
-    # Creating a file for numerai's Diagnostic
-    print(PROGRAM_NAME, dt.strftime(dt.now(), '%m/%d %H:%M:%S'), 'loading valid data')
-
-    # Loading valid data
-    df_valid = pd.read_parquet('numerai_validation_data_int8.parquet', engine='fastparquet')
-
-    # Prediction
-    df_valid[PREDICTION_NAME] = model.predict(df_valid[f_names])
-
-    # Output to csv
-    df_valid[PREDICTION_NAME].to_csv('valid_pred.csv', header=True)
-
-def custom_corr(target, pred):
-
-    # Reference link) post by paulito
-    # https://forum.numer.ai/t/differentiable-spearman-in-pytorch-optimize-for-corr-directly/2287/19
-
-    n_pred = pred.shape[0]
-    n_target = target.shape[0]
-
-    th_pred = torch.tensor(pred.reshape(1, n_pred), requires_grad=True)
-    th_target = torch.tensor(target.reshape(1, n_target))
-
-    # There seems to be a case where an error occurs if pred is too close to 0.5 in the first round.
-    # Exception handling is under consideration, but it sometimes works if you use float64 as below.
-    # th_pred = torch.tensor(pred.reshape(1, n_pred), requires_grad=True, dtype=torch.float64)
-    # th_target = torch.tensor(target.reshape(1, n_target), dtype=torch.float64)
-
-    corr = spearman(th_target, th_pred)
-
-    # rmse (for reference)
-    # rmse = np.sqrt(np.sum(np.square(pred - target)) / len(pred))
-    # print('corr:', float(corr), ' rmse(for reference):', rmse)
-
-    corr_grad = torch.autograd.grad(corr, th_pred)[0]
-    corr_grad = -1.0 * corr_grad.detach().numpy()
-
-    return corr_grad[0], np.ones(corr_grad.shape)[0]
-
-
-def spearman(target, pred):
-
-    pred = soft_rank(pred,
-                     regularization='l2',  # configuration point
-                     regularization_strength=0.01  # configuration point
-                     )
-    if len(pred[0]) > 0:
-        corr = corrcoef(target, pred / len(pred[0]))
-    else:
-        corr = 0.0
-
-    return corr
-
-def corrcoef(target, pred):
-
-    # Reference link
-    # https://forum.numer.ai/t/differentiable-spearman-in-pytorch-optimize-for-corr-directly/2287/19
-
-    # np.corrcoef in torch from @mdo
-    # https://forum.numer.ai/t/custom-corr-functions-for-xgboost-using-pytorch/960
-
-    pred_n = pred - pred.mean()
-    target_n = target - target.mean()
-
-    if pred_n.norm() == 0.0:
-        pred_n = pred_n / 0.000001
-        # To avoid when pred_n.norm() seems to become 0 in the first round of learning.
-    else:
-        pred_n = pred_n / pred_n.norm()
-
-    target_n = target_n / target_n.norm()
-
-    return (pred_n * target_n).sum()
-
-def eval_corr(target, pred):
-
-    # This is used for determining early_stopping.
-
-    corr = scipy.stats.spearmanr(target, pred.get_label())[0]
-
-    # corr = np.corrcoef(target, pred.get_label())[0][1]
-
-    return 'corr', -1.0 * corr  # To aim for the minimum, we minus it
 
+The geometric mean return of a FW portfolio can be approiximated as:
+
+$$
+g_{FW} \approx \mu_{FW} - \frac{\sigma^2_{FW}}{2}
+$$
+
+which can be rearranged as:
+
+$$
+\mu_{FW} \approx g_{FW}  + \frac{\sigma^2_{FW}}{2}
+$$
+
+
+Note that:
+
+$$
+\sum^M_{i=1} w_i g_i \approx \sum^M_{i=1}w_i \mu_i - \frac{1}{2}\sum^M_{i=1} w_i \sigma^2_i
+$$
+
+Hence, 
+
+$$
+\begin{align}
+\bar g &\approx \mu_{FW} - \frac{1}{2}\sum^M_{i=1} w_i \sigma^2_i \\
+&\approx g_{FW}  + \frac{\sigma^2_{FW}}{2} - \frac{1}{2}\sum^M_{i=1} w_i \sigma^2_i 
+\end{align}
+$$
+
+Hence:
+
+$$
+e_v = g_{FW} - \bar g \approx \frac{1}{2} \left(\sum^M_{i=1} w_i \sigma^2_i  - \sigma^2_{FW}\right)
+$$
+
+RHS is also known as "diversification return", an approximation of the volatiltiy effect, we shall label it as $\tilde e_v$, it is has a matrix form
+
+$$
+\tilde e_v = \frac{1}{2} \left(\mathbf{w}'\mathbf{\sigma^2} - \mathbf{w}'\mathbf{\Sigma}\mathbf{w}\right)
+$$
+
+- The vector $\sigma^2$  is the vector of individual return variances.
+
+
+### Pairwise Decomposition of "Diversification Return"
+
+Starting with the above definition:
+
+$$
+\tilde e_v = \frac{1}{2} \left(\sum_{i=1}^{M} w_i \sigma^2_i -  \sum_{i,j=1}^{M} w_i w_j \rho_{ij} \sigma_{i} \sigma_{j} \right)
+$$
+
+
+This equation can be rewritten as:
+
+$$
+\begin{align}
+2 \tilde e_{v} 
+&= \sum^M_{i=1} w_i \sigma^2_i - \sum^M_{i=1} w^2_i \sigma^2_i - \sum_{i\ne j}^{M} w_i w_j \rho_{ij} \sigma_{i} \sigma_{j} \\
+&= \sum^M_{i=1} w_i (1-w_i) \sigma^2_i - \sum_{i\ne j}^{M} w_i w_j \rho_{ij} \sigma_{i} \sigma_{j} \\ 
+&= \sum_{i=1}^{M} w_i \sigma^2_i \sum^M_{j\ne i}  w_j -  2\sum_{i<j}^{M} w_i w_j \rho_{ij} \sigma_{i} \sigma_{j} 
+\end{align}
+$$
+
+
+The first term can be rewritten as:
+
+$$
+\sum_{i=1}^{M} w_i \sigma^2_i \sum^M_{j\ne i}  w_j = \sum^M_{i < j} w_i w_j \left(\sigma^2_i + \sigma^2_j\right)
+$$
+
+
+Hence,
+
+$$
+\begin{align}
+\tilde e_{v} &= \frac{1}{2}\sum_{i< j}^{M} w_i w_j \left(\sigma^2_i + \sigma^2_j - 2 \rho_{ij} \sigma_i \sigma_j\right) \\
+&= \frac{1}{2}\sum_{i< j}^{M} w_i w_j \sigma^2_{i-j}
+\end{align}
+$$
+
+It can be written in a matrix form as follows:
+
+$$
+\tilde e_v = \frac{1}{4} \mathbf{w}' \mathbf{\Sigma_v} \mathbf{w}
+$$
+
+The weight vector $\mathbf{w}$ consists of portfolio weights, and the matrix $\Sigma_v$ is given by:
+
+$$
+\Sigma_v = \begin{pmatrix}
+0 & \sigma_{1-2}^{2} & \cdots & \sigma_{1-M}^{2} \\
+\sigma_{2-1}^{2} & 0 & \cdots & -\sigma_{2-M}^{2}\\
+\vdots & \vdots & \ddots & \vdots \\
+\sigma_{M-1}^2 & \sigma_{M-2}^2 & \cdots & 0
+\end{pmatrix},
+$$
+
+Each term $\sigma_{i-j}$ is the variance of return difference between assets $i$ and $j$. The fraction of $\frac{1}{4}$ is to account for double counting of the number of pairs in the matrix.
+
+Two implications:
+
+1. long-only portfolios ($\forall w_i > 0$), the diversification return is always non-negative
+
+2. The result is of a form that separates the weights and the variances of returns, and the dependence on the weights is quadratic, similarly to that of portfolio variance
+
+### Diversification return of two-asset long-short portfolios
+
+Diversification return of two-asset long-short portfolios is always negative, which evident from 
+
+$$
+\tilde e_{v} = \frac{1}{2} w_1 w_2 \sigma^2_{1-2}
+$$
+
+where $w_1 w_2 < 0$ as they don't have the same sign.
+
+
+**When the short asset is the risk-free asset, then the long-short portfolio can be considered as a levered portfolio in the risky asset**. We designate Asset 1 as the risk-free asset and denote the weight of Asset 2 as L. Then, the diversification return is written as
+
+$$
+\tilde e_{v} = \frac{1}{2} (L - L^2) \sigma^2
+$$
+
+we can interpret $L$ as the leverage and $\sigma$ as the volatility of the risky asset
