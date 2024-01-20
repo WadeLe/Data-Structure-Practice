@@ -1,174 +1,113 @@
-## Definitions 
 
 
-For the fixed-weight (FW) portfolio, we have
-
-$$
-(1+g_{FW})^N = \left(1+\sum^M_{i=1} w_i r_{i1}\right) \cdot \left(1+\sum^M_{i=1} w_i r_{iN}\right)
-$$
-
-For buy-and-hold portfolio:
+Ignoring funding and t-costs, the return of our leveraged ETP, $L$, is $\lambda$ (the leverage ratio) times the return of the reference instrument $S$, i.e.
 
 $$
-(1+g_{BH})^N = w_1 (1+g_1)^N + \cdot + w_M (1+g_M)^N
+dL = L \lambda \frac{d S_t}{S}
 $$
 
-and $g_1, \cdot, g_M$ are the geometric returns of individual assets. 
+- it applies to a continuously rebalanced strategy and rebalancing won't be that perfect in practice 
 
-The rebalance alpha is $\alpha = g_{FW} - g_{BH}$
-
-The average of geometric returns:
-
-$$
-\bar g = \sum^M_{i=1} w_i g_i
-$$
-
-The volatility effect is the difference between the geometric returns of the FW portfolio and $\bar g$:
+    - only an approximation
+    
+    
+Assume the reference ETF follows GBM so that:
 
 $$
-e_v = g_{FW} - \bar g
+d S = \mu S dt + \sigma S d z
 $$
 
-The return effect is is the difference between the geometric returns of the BH portfolio and $\bar g$:
+The crude idea behind the rebalancing strategy is to obtain a payoff of the form 
 
 $$
-e_r = g_{BH} - \bar g
+\left(\frac{S}{S_0}\right)^\lambda
 $$
 
-Rebalancing alpha is hence the difference between the volatility and return effect:
+We use this to guess the form of the evolution of the leveraged ETP value using the ansatz:
 
 $$
-\alpha = g_{FW} - g_{BH} = e_v - e_r
-$$
+L = L_0 \left(\frac{S}{S_0}\right)^\lambda \left(-\frac{1}{2} \lambda (\lambda - 1) \sigma^2 t\right)
+$$ 
 
-### Diversification Return
-
-The approximate relationship between arithmetic and geometirc means:
+Applying Ito's lemma, we can show that indeed
 
 $$
-g \approx \mu - \frac{\sigma^2}{2}
+dL = L \lambda \frac{d S_t}{S}
 $$
 
-The geometric mean return of a FW portfolio can be approiximated as:
+Therefore, 
+
 
 $$
-g_{FW} \approx \mu_{FW} - \frac{\sigma^2_{FW}}{2}
-$$
-
-which can be rearranged as:
-
-$$
-\mu_{FW} \approx g_{FW}  + \frac{\sigma^2_{FW}}{2}
-$$
+L = L_0 \left(\frac{S}{S_0}\right)^\lambda \left(-\frac{1}{2} \lambda (\lambda - 1) \sigma^2 t\right)
+$$ 
 
 
-Note that:
+is indeed the solution.
 
-$$
-\sum^M_{i=1} w_i g_i \approx \sum^M_{i=1}w_i \mu_i - \frac{1}{2}\sum^M_{i=1} w_i \sigma^2_i
-$$
+Note that this has two parts:
 
-Hence, 
+1. the naive leveraged return
 
-$$
-\begin{align}
-\bar g &\approx \mu_{FW} - \frac{1}{2}\sum^M_{i=1} w_i \sigma^2_i \\
-&\approx g_{FW}  + \frac{\sigma^2_{FW}}{2} - \frac{1}{2}\sum^M_{i=1} w_i \sigma^2_i 
-\end{align}
-$$
+2. the drag due to realised variance
 
-Hence:
+
+While it is usually the case that leveraged ETP underperforms due to large realised variance, it is also possible the first term to dominate the second
+
+- i.e. outperform when market steadily goes up
+
+### Trading realised vol without options
+
+
+Let's buy one dollar of $L$ and sell short $\lambda$ dollars of $S$ (and $\lambda < 0$ this would mea that we would be buying $L$). At any given time our account equity is 
 
 $$
-e_v = g_{FW} - \bar g \approx \frac{1}{2} \left(\sum^M_{i=1} w_i \sigma^2_i  - \sigma^2_{FW}\right)
+E = \frac{L}{L_0} - \lambda \frac{S}{S_0} - (1-\lambda)
 $$
 
-RHS is also known as "diversification return", an approximation of the volatiltiy effect, we shall label it as $\tilde e_v$, it is has a matrix form
+- the last term is the cash credit or debit for initiating the position
+
+
+Using the functional form of $L$:
 
 $$
-\tilde e_v = \frac{1}{2} \left(\mathbf{w}'\mathbf{\sigma^2} - \mathbf{w}'\mathbf{\Sigma}\mathbf{w}\right)
-$$
+L = L_0 \left(\frac{S}{S_0}\right)^\lambda \left(-\frac{1}{2} \lambda (\lambda - 1) \sigma^2 t\right)
+$$ 
 
-- The vector $\sigma^2$  is the vector of individual return variances.
-
-
-### Pairwise Decomposition of "Diversification Return"
-
-Starting with the above definition:
+we get:
 
 $$
-\tilde e_v = \frac{1}{2} \left(\sum_{i=1}^{M} w_i \sigma^2_i -  \sum_{i,j=1}^{M} w_i w_j \rho_{ij} \sigma_{i} \sigma_{j} \right)
+E = \left(\frac{S}{S_0}\right)^\lambda \left(-\frac{1}{2} \lambda (\lambda - 1) \sigma^2 t\right) - \lambda \frac{S}{S_0} - (1-\lambda)
 $$
 
 
-This equation can be rewritten as:
+If $\lambda = 2$, we have 
 
 $$
-\begin{align}
-2 \tilde e_{v} 
-&= \sum^M_{i=1} w_i \sigma^2_i - \sum^M_{i=1} w^2_i \sigma^2_i - \sum_{i\ne j}^{M} w_i w_j \rho_{ij} \sigma_{i} \sigma_{j} \\
-&= \sum^M_{i=1} w_i (1-w_i) \sigma^2_i - \sum_{i\ne j}^{M} w_i w_j \rho_{ij} \sigma_{i} \sigma_{j} \\ 
-&= \sum_{i=1}^{M} w_i \sigma^2_i \sum^M_{j\ne i}  w_j -  2\sum_{i<j}^{M} w_i w_j \rho_{ij} \sigma_{i} \sigma_{j} 
-\end{align}
+E = \left(\frac{S}{S_0}\right)^2 \exp\left(-\sigma^2 t\right) - 2 \frac{S}{S_0} + 1
 $$
 
 
-The first term can be rewritten as:
+This is a parabolic function of the scaled reference fund value.
+
+This portfolio behaves like a long straddle:
+
+- large moves make money but also incur time decay
+
+- also shorting realised volatity
+
+
+
+To make money , we need steady, presistent moves, the break-even levels are given by
+
 
 $$
-\sum_{i=1}^{M} w_i \sigma^2_i \sum^M_{j\ne i}  w_j = \sum^M_{i < j} w_i w_j \left(\sigma^2_i + \sigma^2_j\right)
+\frac{S}{S_0} = \exp\left(\sigma^2 t\right) \left(1 \pm \sqrt{1 - \exp \left(-\sigma^2 t\right)}\right)
 $$
 
 
-Hence,
-
-$$
-\begin{align}
-\tilde e_{v} &= \frac{1}{2}\sum_{i< j}^{M} w_i w_j \left(\sigma^2_i + \sigma^2_j - 2 \rho_{ij} \sigma_i \sigma_j\right) \\
-&= \frac{1}{2}\sum_{i< j}^{M} w_i w_j \sigma^2_{i-j}
-\end{align}
-$$
-
-It can be written in a matrix form as follows:
-
-$$
-\tilde e_v = \frac{1}{4} \mathbf{w}' \mathbf{\Sigma_v} \mathbf{w}
-$$
-
-The weight vector $\mathbf{w}$ consists of portfolio weights, and the matrix $\Sigma_v$ is given by:
-
-$$
-\Sigma_v = \begin{pmatrix}
-0 & \sigma_{1-2}^{2} & \cdots & \sigma_{1-M}^{2} \\
-\sigma_{2-1}^{2} & 0 & \cdots & -\sigma_{2-M}^{2}\\
-\vdots & \vdots & \ddots & \vdots \\
-\sigma_{M-1}^2 & \sigma_{M-2}^2 & \cdots & 0
-\end{pmatrix},
-$$
-
-Each term $\sigma_{i-j}$ is the variance of return difference between assets $i$ and $j$. The fraction of $\frac{1}{4}$ is to account for double counting of the number of pairs in the matrix.
-
-Two implications:
-
-1. long-only portfolios ($\forall w_i > 0$), the diversification return is always non-negative
-
-2. The result is of a form that separates the weights and the variances of returns, and the dependence on the weights is quadratic, similarly to that of portfolio variance
-
-### Diversification return of two-asset long-short portfolios
-
-Diversification return of two-asset long-short portfolios is always negative, which evident from 
-
-$$
-\tilde e_{v} = \frac{1}{2} w_1 w_2 \sigma^2_{1-2}
-$$
-
-where $w_1 w_2 < 0$ as they don't have the same sign.
 
 
-**When the short asset is the risk-free asset, then the long-short portfolio can be considered as a levered portfolio in the risky asset**. We designate Asset 1 as the risk-free asset and denote the weight of Asset 2 as L. Then, the diversification return is written as
 
-$$
-\tilde e_{v} = \frac{1}{2} (L - L^2) \sigma^2
-$$
 
-we can interpret $L$ as the leverage and $\sigma$ as the volatility of the risky asset
+
